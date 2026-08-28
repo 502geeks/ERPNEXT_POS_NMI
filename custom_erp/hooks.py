@@ -1,3 +1,7 @@
+page_js = {
+    "point-of-sale": "public/js/nmi_pos.js"
+}
+
 app_name = "custom_erp"
 app_title = "Custom ERP16"
 app_publisher = "Suresh"
@@ -5,6 +9,12 @@ app_description = "Custom ERP16 for payments"
 app_email = "suresh9753@gmail.com"
 app_license = "mit"
 
+doc_events = {
+    "Sales Invoice": {
+        "on_submit":
+            "custom_erp.nmi.events.link_nmi_payment"
+    }
+}
 # Apps
 # ------------------
 
@@ -256,3 +266,11 @@ app_license = "mit"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+fixtures = [
+    {
+        "dt": "Client Script",
+        "filters": [
+            ["name", "=", "NMI Payment Transaction Void"]
+        ]
+    }
+]
