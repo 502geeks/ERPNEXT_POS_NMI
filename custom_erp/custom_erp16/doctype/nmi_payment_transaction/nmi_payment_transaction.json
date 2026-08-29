@@ -39,7 +39,11 @@
   "refund_request_time",
   "refund_completed_time",
   "refund_requested_by",
-  "refund_response"
+  "refund_response",
+  "is_settled",
+  "settlement_time",
+  "settlement_batch_id",
+  "settlement_checked_at"
  ],
  "fields": [
   {
@@ -240,12 +244,37 @@
    "fieldtype": "Long Text",
    "label": "Refund Response",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_settled",
+   "fieldtype": "Check",
+   "label": "Is Settled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_time",
+   "fieldtype": "Datetime",
+   "label": "Settlement Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_batch_id",
+   "fieldtype": "Data",
+   "label": "Settlement Batch ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Settlement Checked At",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-27 19:01:58.974953",
+ "modified": "2026-08-29 12:00:19.827857",
  "modified_by": "Administrator",
  "module": "Custom ERP16",
  "name": "NMI Payment Transaction",

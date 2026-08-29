@@ -419,6 +419,7 @@ def void_payment(transaction_name):
 
 @frappe.whitelist()
 def refund_payment(transaction_name, amount):
+
     txn = frappe.get_doc(
         "NMI Payment Transaction",
         transaction_name
@@ -545,3 +546,38 @@ def refund_payment(transaction_name, amount):
         frappe.db.commit()
 
         raise
+
+def void_nmi_return(return_doc, original_invoice, nmi_txn):
+    client = NMIClient()
+
+    result = client.void_transaction(
+        nmi_txn.nmi_transaction_id
+    )
+
+    return {
+        "action": "VOID",
+        "return_invoice": return_doc.name,
+        "nmi_transaction_id": nmi_txn.nmi_transaction_id,
+        "result": result,
+    }
+
+def refund_nmi_return(
+    return_doc,
+    original_invoice,
+    nmi_txn,
+    refund_amount
+):
+    client = NMIClient()
+
+    result = client.refund_transaction(
+        nmi_txn.nmi_transaction_id,
+        refund_amount
+    )
+
+    return {
+        "action": "REFUND",
+        "return_invoice": return_doc.name,
+        "nmi_transaction_id": nmi_txn.nmi_transaction_id,
+        "refund_amount": refund_amount,
+        "result": result,
+    }

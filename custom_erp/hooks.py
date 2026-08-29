@@ -12,7 +12,7 @@ app_license = "mit"
 doc_events = {
     "Sales Invoice": {
         "on_submit":
-            "custom_erp.nmi.events.link_nmi_payment"
+            "custom_erp.nmi.events.handle_sales_invoice_submit"
     }
 }
 # Apps
