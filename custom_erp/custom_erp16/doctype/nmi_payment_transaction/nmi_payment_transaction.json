@@ -1,0 +1,301 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-08-26 23:28:10.509748",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "device",
+  "customer",
+  "company",
+  "pos_profile",
+  "amount",
+  "currency",
+  "payment_request_id",
+  "nmi_transaction_id",
+  "authorization_code",
+  "status",
+  "response_code",
+  "response_message",
+  "request_time",
+  "completed_time",
+  "erp_document_type",
+  "erp_document_name",
+  "sanitized_response",
+  "void_status",
+  "void_transaction_id",
+  "void_response_code",
+  "void_response_message",
+  "void_request_time",
+  "void_completed_time",
+  "void_requested_by",
+  "void_response",
+  "refund_status",
+  "refund_amount",
+  "refund_transaction_id",
+  "refund_response_code",
+  "refund_response_message",
+  "refund_request_time",
+  "refund_completed_time",
+  "refund_requested_by",
+  "refund_response",
+  "is_settled",
+  "settlement_time",
+  "settlement_batch_id",
+  "settlement_checked_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "device",
+   "fieldtype": "Link",
+   "label": "Device",
+   "options": "NMI Device"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "label": "POS Profile",
+   "options": "POS Profile"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "payment_request_id",
+   "fieldtype": "Data",
+   "label": "Payment Request ID"
+  },
+  {
+   "fieldname": "nmi_transaction_id",
+   "fieldtype": "Data",
+   "label": "NMI Transaction ID"
+  },
+  {
+   "fieldname": "authorization_code",
+   "fieldtype": "Data",
+   "label": "Authorization Code"
+  },
+  {
+   "default": "Created",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Created\nSent To Terminal\nIn Flight\nApproved\nDeclined\nCancelled\nTimed Out\nError\nERPNext Completed"
+  },
+  {
+   "fieldname": "response_code",
+   "fieldtype": "Data",
+   "label": "Response Code"
+  },
+  {
+   "fieldname": "response_message",
+   "fieldtype": "Small Text",
+   "label": "Response Message"
+  },
+  {
+   "fieldname": "request_time",
+   "fieldtype": "Datetime",
+   "label": "Request Time"
+  },
+  {
+   "fieldname": "completed_time",
+   "fieldtype": "Datetime",
+   "label": "Completed Time"
+  },
+  {
+   "fieldname": "erp_document_type",
+   "fieldtype": "Link",
+   "label": "ERP Document Type",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "erp_document_name",
+   "fieldtype": "Dynamic Link",
+   "label": "ERP Document Name",
+   "options": "erp_document_type"
+  },
+  {
+   "fieldname": "sanitized_response",
+   "fieldtype": "Code",
+   "label": "Sanitized Response"
+  },
+  {
+   "default": "Not Requested",
+   "fieldname": "void_status",
+   "fieldtype": "Select",
+   "label": "Void Status",
+   "options": "Not Requested\nProcessing\nApproved\nDeclined\nError"
+  },
+  {
+   "fieldname": "void_transaction_id",
+   "fieldtype": "Data",
+   "label": "Void Transaction ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_response_code",
+   "fieldtype": "Data",
+   "label": "Void Response Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_response_message",
+   "fieldtype": "Small Text",
+   "label": "Void Response Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_request_time",
+   "fieldtype": "Datetime",
+   "label": "Void Request Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_completed_time",
+   "fieldtype": "Datetime",
+   "label": "Void Completed Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_requested_by",
+   "fieldtype": "Link",
+   "label": "Void Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "void_response",
+   "fieldtype": "Long Text",
+   "label": "Void Response",
+   "read_only": 1
+  },
+  {
+   "default": "Not Requested",
+   "fieldname": "refund_status",
+   "fieldtype": "Select",
+   "label": "Refund Status",
+   "options": "Not Requested\nProcessing\nApproved\nDeclined\nError"
+  },
+  {
+   "fieldname": "refund_amount",
+   "fieldtype": "Currency",
+   "label": "Refund Amount"
+  },
+  {
+   "fieldname": "refund_transaction_id",
+   "fieldtype": "Data",
+   "label": "Refund Transaction ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_response_code",
+   "fieldtype": "Data",
+   "label": "Refund Response Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_response_message",
+   "fieldtype": "Small Text",
+   "label": "Refund Response Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_request_time",
+   "fieldtype": "Datetime",
+   "label": "Refund Request Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_completed_time",
+   "fieldtype": "Datetime",
+   "label": "Refund Completed Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_requested_by",
+   "fieldtype": "Link",
+   "label": "Refund Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refund_response",
+   "fieldtype": "Long Text",
+   "label": "Refund Response",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_settled",
+   "fieldtype": "Check",
+   "label": "Is Settled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_time",
+   "fieldtype": "Datetime",
+   "label": "Settlement Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_batch_id",
+   "fieldtype": "Data",
+   "label": "Settlement Batch ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "settlement_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Settlement Checked At",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-29 12:00:19.827857",
+ "modified_by": "Administrator",
+ "module": "Custom ERP16",
+ "name": "NMI Payment Transaction",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
