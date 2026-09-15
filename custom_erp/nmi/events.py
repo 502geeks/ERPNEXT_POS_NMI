@@ -2,10 +2,11 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 from custom_erp.nmi.api import (
-    void_nmi_return,
-    refund_nmi_return,
+    void_payment,
+    refund_payment,
 )
-from custom_erp.nmi.api import void_payment, refund_payment
+
+
 
 def link_nmi_payment(doc, method=None):
     nmi_payment_transaction = doc.get(
@@ -33,17 +34,45 @@ def link_nmi_payment(doc, method=None):
     # ---------------------------------------------
     # VERIFY AMOUNT
     # ---------------------------------------------
+
+    frappe.logger().info(
+    "NMI submit payments: %s",
+    [
+        {
+            "mode": p.mode_of_payment,
+            "amount": p.amount
+        }
+        for p in (doc.get("payments") or [])
+    ]
+    )
+
+    credit_card_amount = 0
+
+    for payment in doc.get("payments") or []:
+        if payment.mode_of_payment == "Credit Card":
+            credit_card_amount += flt(payment.amount)
+
+    credit_card_amount = flt(
+        credit_card_amount,
+        2
+    )
+
+    if credit_card_amount <= 0:
+        frappe.throw(
+            _("No Credit Card payment amount was found on the invoice.")
+        )
+
     if abs(
-        flt(txn.amount) -
-        flt(doc.grand_total)
+        flt(txn.amount, 2) -
+        credit_card_amount
     ) > 0.01:
         frappe.throw(
             _(
                 "NMI approved amount {0} does not "
-                "match invoice grand total {1}."
+                "match invoice Credit Card amount {1}."
             ).format(
                 txn.amount,
-                doc.grand_total
+                credit_card_amount
             )
         )
 
@@ -101,11 +130,47 @@ def handle_sales_invoice_submit(doc, method=None):
         nmi_payment_transaction
     )
 
+    if nmi_txn.status != "ERPNext Completed":
+        frappe.throw(
+            "The original NMI payment is not in ERPNext Completed status. "
+            "Return processing cannot continue."
+        )
+
     # ---------------------------------------------------------
     # Current return amount
     # ---------------------------------------------------------
     current_return_amount = abs(doc.grand_total)
 
+    current_nmi_return_amount = sum(
+    abs(p.amount or 0)
+    for p in doc.payments
+    if p.mode_of_payment == "Credit Card"
+    )
+
+    
+    original_nmi_amount = abs(
+    frappe.utils.flt(nmi_txn.amount)
+    )
+
+    if current_nmi_return_amount <= 0:
+        frappe.throw(
+            "No Credit Card return amount was found for this NMI transaction."
+        )
+
+    if current_nmi_return_amount > original_nmi_amount + 0.01:
+        frappe.throw(
+            "NMI return amount cannot exceed the original NMI payment amount."
+        )
+
+
+    is_full_nmi_return = abs(
+        original_nmi_amount - current_nmi_return_amount
+    ) < 0.01
+
+    if current_return_amount <= 0:
+        frappe.throw(
+            "Return amount must be greater than zero."
+        )
     # ---------------------------------------------------------
     # Previous submitted ERPNext returns
     # Exclude the current return
@@ -129,15 +194,19 @@ def handle_sales_invoice_submit(doc, method=None):
     total_return_amount = (
         previous_return_amount + current_return_amount
     )
-
+    
     original_amount = abs(original_invoice.grand_total)
+
+    if total_return_amount > original_amount + 0.01:
+        frappe.throw(
+            "Total return amount cannot exceed the original invoice amount."
+        )
 
     # Allow a small rounding tolerance
     is_full_return = abs(
         original_amount - total_return_amount
     ) < 0.01
-
-    has_previous_return = len(previous_returns) > 0
+   
 
     # ---------------------------------------------------------
     # Decide VOID vs REFUND
@@ -154,28 +223,35 @@ def handle_sales_invoice_submit(doc, method=None):
             "transaction. Additional automatic NMI refunds are not allowed."
     )
 
-    elif not is_full_return:
+    elif not is_full_nmi_return:
         action = "REFUND"
-        reason = "Partial return"
-
-    elif nmi_txn.is_settled:
-        action = "REFUND"
-        reason = "NMI transaction is settled"
+        reason = "Partial NMI card return"
 
     else:
         action = "VOID"
-        reason = "Full return and NMI transaction is not settled"
-
+        reason = "Full NMI card return - attempt NMI void"
 
     
     if action == "VOID":
         result = void_payment(nmi_txn.name)
 
+        if result.get("void_status") != "Approved":
+            frappe.throw(
+                "NMI void was not approved. "
+                "The ERPNext return cannot be completed."
+            )
+
     elif action == "REFUND":
         result = refund_payment(
             nmi_txn.name,
-            current_return_amount
+            current_nmi_return_amount
         )
+
+        if result.get("refund_status") != "Approved":
+            frappe.throw(
+                "NMI refund was not approved. "
+                "The ERPNext return cannot be completed."
+            )
 
     return {
         "return_invoice": doc.name,
@@ -189,48 +265,3 @@ def handle_sales_invoice_submit(doc, method=None):
     }
 
     
-
-
-# def handle_sales_invoice_submit(doc, method=None):
-#     # Normal Sales Invoice
-#     if not doc.is_return:
-#         link_nmi_payment(doc, method)
-#         return
-
-#     # Return Sales Invoice
-#     if not doc.return_against:
-#         return
-
-#     original_invoice = frappe.get_doc(
-#         "Sales Invoice",
-#         doc.return_against
-#     )
-
-#     nmi_payment_transaction = original_invoice.get(
-#         "custom_nmi_payment_transaction"
-#     )
-
-#     if not nmi_payment_transaction:
-#         frappe.logger("nmi").info(
-#             f"Return {doc.name}: Original invoice "
-#             f"{original_invoice.name} has no NMI linkage."
-#         )
-#         return
-
-#     nmi_txn = frappe.get_doc(
-#         "NMI Payment Transaction",
-#         nmi_payment_transaction
-#     )
-
-#     frappe.logger("nmi").info(
-#         f"""
-#         NMI RETURN DETECTED
-#         Return Invoice: {doc.name}
-#         Original Invoice: {original_invoice.name}
-#         NMI Payment Transaction: {nmi_txn.name}
-#         NMI Transaction ID: {nmi_txn.nmi_transaction_id}
-#         Is Settled: {nmi_txn.is_settled}
-#         Settlement Time: {nmi_txn.settlement_time}
-#         Return Grand Total: {doc.grand_total}
-#         """
-#             )

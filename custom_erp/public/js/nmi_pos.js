@@ -17,26 +17,40 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
     }
 
     function get_credit_card_payment(frm) {
-        return (frm.doc.payments || []).find(
-            p =>
-                p.mode_of_payment === NMI_MODE_OF_PAYMENT &&
-                flt(p.amount) > 0
-        );
+    return (frm.doc.payments || []).find(
+        p =>
+            p.mode_of_payment === NMI_MODE_OF_PAYMENT &&
+            flt(p.amount) > 0
+    );
+    }
+
+   
+    function get_payment_allocations(frm) {
+    return (frm.doc.payments || [])
+        .filter(p => flt(p.amount) !== 0)
+        .map(p => ({
+            mode_of_payment: p.mode_of_payment,
+            amount: Math.abs(flt(p.amount))
+        }));
     }
 
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async function start_nmi_payment(frm, card_payment) {
+    async function start_nmi_payment(frm, card_payment,payment_allocations  ) {
         const response = await frappe.call({
             method: "custom_erp.nmi.api.start_pos_payment",
-            args: {
+           args: {
                 pos_profile: frm.doc.pos_profile,
                 amount: card_payment.amount,
                 customer: frm.doc.customer,
                 company: frm.doc.company,
-                currency: frm.doc.currency || "USD"
+                currency: frm.doc.currency || "USD",
+
+                erp_document_type: frm.doc.doctype,
+                erp_document_name: frm.doc.name,
+                payment_allocations: JSON.stringify(payment_allocations)
             }
         });
 
@@ -91,45 +105,84 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
     }
 
     async function process_nmi_payment(
-        frm,
-        card_payment
+    frm,
+    card_payment,
+    payment_allocations
     ) {
-        if (nmi_processing) {
-            frappe.show_alert({
-                message: __(
-                    "NMI payment is already processing."
-                ),
-                indicator: "orange"
-            });
+    if (nmi_processing) {
+        frappe.show_alert({
+            message: __(
+                "NMI payment is already processing."
+            ),
+            indicator: "orange"
+        });
 
-            return null;
-        }
+        return null;
+    }
 
-        nmi_processing = true;
+    nmi_processing = true;
 
-        frappe.dom.freeze(
-            __("Waiting for card payment on NMI terminal...")
+    frappe.dom.freeze(
+        __("Waiting for card payment on NMI terminal...")
+    );
+
+    try {
+        // ---------------------------------------------
+        // 1. START OR RESUME NMI PAYMENT
+        // ---------------------------------------------
+        const payment = await start_nmi_payment(
+            frm,
+            card_payment,
+            payment_allocations
         );
 
-        try {
-            // ---------------------------------------------
-            // 1. CREATE NMI PAYMENT REQUEST
-            // ---------------------------------------------
-            const payment = await start_nmi_payment(
-                frm,
-                card_payment
+        if (!payment?.transaction) {
+            throw new Error(
+                "NMI transaction was not created."
+            );
+        }
+
+        console.log(
+            "NMI Payment Transaction:",
+            payment.transaction
+        );
+
+        // ---------------------------------------------
+        // 2. HANDLE EXISTING PAYMENT
+        // ---------------------------------------------
+        if (payment.existing_payment) {
+
+            console.log(
+                "Existing NMI payment found:",
+                payment.transaction,
+                payment.status
             );
 
-            if (!payment?.transaction) {
+            // Already approved at NMI.
+            // Do NOT send another sale.
+            if (payment.status === "Approved") {
+                return {
+                    transaction: payment.transaction,
+                    status: "Approved",
+                    existing_payment: true
+                };
+            }
+
+            // Existing request can safely continue polling.
+            if (payment.resume_polling) {
+                frappe.show_alert({
+                    message: __(
+                        "Resuming existing NMI payment..."
+                    ),
+                    indicator: "blue"
+                });
+            } else {
                 throw new Error(
-                    "NMI transaction was not created."
+                    `Existing NMI payment cannot be resumed. Status: ${payment.status}`
                 );
             }
 
-            console.log(
-                "NMI Payment Transaction:",
-                payment.transaction
-            );
+        } else {
 
             frappe.show_alert({
                 message: __(
@@ -137,51 +190,49 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
                 ),
                 indicator: "blue"
             });
-
-            // ---------------------------------------------
-            // 2. WAIT FOR TERMINAL RESPONSE
-            // ---------------------------------------------
-            const result = await wait_for_nmi_result(
-                payment.transaction
-            );
-
-            if (result.status !== "Approved") {
-                throw new Error(
-                    `Unexpected NMI status: ${result.status}`
-                );
-            }
-
-            frappe.show_alert({
-                message: __("NMI payment approved."),
-                indicator: "green"
-            });
-
-            // IMPORTANT:
-            // Return the complete result instead of true.
-            // We need result.transaction later.
-            return result;
-
-        } catch (error) {
-            console.error(
-                "NMI POS Payment Error:",
-                error
-            );
-
-            frappe.msgprint({
-                title: __("Card Payment Failed"),
-                indicator: "red",
-                message:
-                    error.message ||
-                    __("Unable to process NMI payment.")
-            });
-
-            return null;
-
-        } finally {
-            nmi_processing = false;
-            frappe.dom.unfreeze();
         }
+
+        // ---------------------------------------------
+        // 3. WAIT FOR TERMINAL RESPONSE
+        // ---------------------------------------------
+        const result = await wait_for_nmi_result(
+            payment.transaction
+        );
+
+        if (result.status !== "Approved") {
+            throw new Error(
+                `Unexpected NMI status: ${result.status}`
+            );
+        }
+
+        frappe.show_alert({
+            message: __("NMI payment approved."),
+            indicator: "green"
+        });
+
+        return result;
+
+    } catch (error) {
+        console.error(
+            "NMI POS Payment Error:",
+            error
+        );
+
+        frappe.msgprint({
+            title: __("Card Payment Failed"),
+            indicator: "red",
+            message:
+                error.message ||
+                __("Unable to process NMI payment.")
+        });
+
+        return null;
+
+    } finally {
+        nmi_processing = false;
+        frappe.dom.unfreeze();
     }
+}
 
     document.addEventListener(
         "click",
@@ -216,18 +267,15 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
 
             const frm = pos.frm;
 
-            const credit_card_payment =
-                get_credit_card_payment(frm);
+            const credit_card_payment = get_credit_card_payment(frm);
+            
+            const payment_allocations = get_payment_allocations(frm);
 
-            /*
-             * No Credit Card amount:
-             * leave ERPNext's normal Cash / Check /
-             * Wire Transfer behavior untouched.
-             */
             if (!credit_card_payment) {
                 return;
             }
 
+            
             /*
              * Stop ERPNext invoice submission until
              * NMI authorization succeeds.
@@ -236,6 +284,44 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
             event.stopPropagation();
             event.stopImmediatePropagation();
 
+            try {
+                if (frm.is_new() || frm.dirty()) {
+                    await frm.save();
+                }
+
+                if (!frm.doc.name || frm.is_new()) {
+                    throw new Error(
+                        "Unable to save the Sales Invoice before card payment."
+                    );
+                }
+
+                console.log(
+                    "ERP draft saved before NMI payment:",
+                    frm.doc.doctype,
+                    frm.doc.name
+                );
+
+            } catch (error) {
+                console.error(
+                    "Unable to save ERP draft:",
+                    error
+                );
+
+                frappe.msgprint({
+                    title: __("Unable to Start Card Payment"),
+                    indicator: "red",
+                    message: __(
+                        "The invoice could not be saved before starting the NMI payment."
+                    )
+                });
+
+                return;
+            }
+
+           
+          
+
+
             // ---------------------------------------------
             // 3. PROCESS NMI PAYMENT
             // ---------------------------------------------
@@ -243,6 +329,7 @@ console.log("CUSTOM ERP: NMI POS integration loaded from nmi_pos.js");
                 await process_nmi_payment(
                     frm,
                     credit_card_payment
+                    ,payment_allocations
                 );
 
             if (

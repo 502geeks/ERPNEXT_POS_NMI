@@ -43,7 +43,8 @@
   "is_settled",
   "settlement_time",
   "settlement_batch_id",
-  "settlement_checked_at"
+  "settlement_checked_at",
+  "gateway_environment"
  ],
  "fields": [
   {
@@ -269,12 +270,19 @@
    "fieldtype": "Datetime",
    "label": "Settlement Checked At",
    "read_only": 1
+  },
+  {
+   "fieldname": "gateway_environment",
+   "fieldtype": "Select",
+   "label": "Gateway Environment",
+   "options": "Sandbox\nProduction",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-29 12:00:19.827857",
+ "modified": "2026-09-14 14:10:46.830874",
  "modified_by": "Administrator",
  "module": "Custom ERP16",
  "name": "NMI Payment Transaction",

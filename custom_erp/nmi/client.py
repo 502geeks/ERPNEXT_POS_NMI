@@ -1,6 +1,9 @@
 import requests
 import frappe
 
+class NMIAmbiguousPaymentError(Exception):
+    """The NMI request may have reached the gateway, but the result is unknown."""
+    pass
 
 class NMIClient:
     def __init__(self):
@@ -16,8 +19,10 @@ class NMIClient:
 
         if self.environment == "Production":
             self.base_url = "https://secure.nmi.com"
+            self.transaction_url = "https://secure.nmi.com/api/transact.php"
         else:
             self.base_url = "https://sandbox.nmi.com"
+            self.transaction_url = "https://sandbox.nmi.com/api/transact.php"
 
     def _headers(self):
         return {
@@ -43,15 +48,30 @@ class NMIClient:
                 "order_description": "ERPNext POS Sale"
             }
 
-        response = requests.post(
-            url,
-            headers=self._headers(),
-            json=payload,
-            timeout=30,
-        )
+        try:
+            response = requests.post(
+                url,
+                headers=self._headers(),
+                json=payload,
+                timeout=30,
+            )
 
-        response.raise_for_status()
-        return response.json()
+            response.raise_for_status()
+            return response.json()
+
+        except requests.Timeout as exc:
+            raise NMIAmbiguousPaymentError(
+                "NMI payment request timed out after submission. "
+                "The payment status is unknown. Do not retry this payment "
+                "until the existing transaction is reconciled."
+            ) from exc
+
+        except requests.RequestException as exc:
+            raise NMIAmbiguousPaymentError(
+                "NMI payment request failed due to a network error. "
+                "The payment status may be unknown. Do not retry this payment "
+                "until the existing transaction is reconciled."
+            ) from exc
 
     def get_payment_status(self, device_id, request_id):
         url = (
@@ -69,22 +89,26 @@ class NMIClient:
         return response.json()
 
     def void_transaction(self, transaction_id):
-        url = "https://secure.nmi.com/api/transact.php"
-
+       
         payload = {
             "security_key": self.api_key,
             "type": "void",
             "transactionid": transaction_id,
         }
 
-        response = requests.post(
-            url,
-            data=payload,
-            timeout=30,
-        )
 
-        response.raise_for_status()
+        try:
+            response = requests.post(
+                self.transaction_url,
+                data=payload,
+                timeout=30,
+            )
 
+            response.raise_for_status()
+        except (requests.Timeout, requests.ConnectionError) as exec:
+            raise NMIAmbiguousPaymentError("NMI void result is unknown due to a network failure. "
+        "Do not retry the void until the transaction is reconciled.") from exec
+        
         from urllib.parse import parse_qs
 
         parsed = parse_qs(response.text)
@@ -98,7 +122,7 @@ class NMIClient:
     def refund_transaction(self, transaction_id, amount):
         from urllib.parse import parse_qs
 
-        url = "https://secure.nmi.com/api/transact.php"
+        
 
         payload = {
             "security_key": self.api_key,
@@ -107,13 +131,17 @@ class NMIClient:
             "amount": f"{float(amount):.2f}",
         }
 
-        response = requests.post(
-            url,
-            data=payload,
-            timeout=30,
-        )
+        try:
+            response = requests.post(
+                self.transaction_url,
+                data=payload,
+                timeout=30,
+            )
 
-        response.raise_for_status()
+            response.raise_for_status()
+        except(requests.Timeout, requests.ConnectionError) as exec:
+            raise NMIAmbiguousPaymentError("NMI refund result is unknown due to a network failure. "
+        "Do not retry the refund until the transaction is reconciled.") from exec
 
         parsed = parse_qs(response.text)
 
