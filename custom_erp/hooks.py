@@ -15,8 +15,10 @@ after_sync = "custom_erp.setup.validate_nmi_setup"
 
 doc_events = {
     "Sales Invoice": {
+         "before_submit":
+            "custom_erp.nmi.events.validate_sales_invoice_nmi_payment",
         "on_submit":
-            "custom_erp.nmi.events.handle_sales_invoice_submit"
+            "custom_erp.nmi.events.handle_sales_invoice_submit",
     }
 }
 

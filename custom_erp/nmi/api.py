@@ -53,7 +53,7 @@ def _require_payment_permission(permission_type, transaction=None):
 
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start_test_payment(pos_profile="Bridge", amount=1.00):
 
     _require_payment_permission("process_payment")
@@ -209,7 +209,7 @@ def check_payment_status(transaction_name):
         "nmi_response": _sanitize_nmi_response(result),
     }
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start_pos_payment(
     pos_profile,
     amount,
@@ -230,20 +230,60 @@ def start_pos_payment(
         frappe.throw(
             "ERP document is required before starting NMI payment."
         )
-
-    if erp_document_type not in (
-        "Sales Invoice",
-        "POS Invoice"
-    ):
+    if erp_document_type != "Sales Invoice":
         frappe.throw(
-            "Unsupported ERP document type for NMI payment."
+            "Only Sales Invoice is supported for NMI payments "
+            "in the current release."
         )
 
     erp_doc = frappe.get_doc(
         erp_document_type,
         erp_document_name
     )
+     # -------------------------------------------------
+    # AUTHORITATIVE ERP VALUES
+    # -------------------------------------------------
+    customer = erp_doc.customer
+    company = erp_doc.company
+    currency = erp_doc.currency
+    if not erp_doc.is_pos:
+        frappe.throw(
+            "NMI POS payment can only be started for a POS Sales Invoice."
+        )
 
+    if not erp_doc.pos_profile:
+        frappe.throw(
+            "POS Profile is required for an NMI POS payment."
+        )
+
+    pos_profile = erp_doc.pos_profile
+    # -------------------------------------------------
+    # VERIFY USER ACCESS TO ERP DOCUMENT
+    # -------------------------------------------------
+    if not erp_doc.has_permission("read"):
+        frappe.throw(
+            "You do not have permission to access this invoice.",
+            frappe.PermissionError,
+        )
+
+    if not erp_doc.has_permission("write"):
+        frappe.throw(
+            "You do not have permission to process payment "
+            "for this invoice.",
+            frappe.PermissionError,
+        )
+    # -------------------------------------------------
+    # VERIFY INVOICE STATE
+    # -------------------------------------------------
+    if erp_doc.docstatus != 0:
+        frappe.throw(
+            "NMI payment can only be started for a Draft invoice."
+        )
+
+    if erp_doc.is_return:
+        frappe.throw(
+            "NMI sale payment cannot be started for a return invoice."
+        )
     # -------------------------------------------------
     # DUPLICATE PAYMENT PROTECTION
     # -------------------------------------------------
@@ -258,44 +298,22 @@ def start_pos_payment(
         )
 
     # -------------------------------------------------
-    # VALIDATE PAYMENT ALLOCATIONS
+    # AUTHORITATIVE PAYMENT ALLOCATIONS
+    # Use the persisted Sales Invoice, not browser input.
     # -------------------------------------------------
-    if not payment_allocations:
-        frappe.throw(
-            "Payment allocations are required."
-        )
+    persisted_payments = erp_doc.get("payments") or []
 
-    if isinstance(payment_allocations, str):
-        try:
-            payment_allocations = json.loads(
-                payment_allocations
-            )
-        except Exception:
-            frappe.throw(
-                "Invalid payment allocations."
-            )
-
-    if not isinstance(payment_allocations, list):
+    if not persisted_payments:
         frappe.throw(
-            "Payment allocations must be a list."
+            "No payment allocations were found on the Sales Invoice."
         )
 
     allocation_total = 0
     credit_card_amount = 0
 
-    for payment in payment_allocations:
-
-        if not isinstance(payment, dict):
-            frappe.throw(
-                "Invalid payment allocation entry."
-            )
-
-        mode_of_payment = payment.get(
-            "mode_of_payment"
-        )
-
+    for payment in persisted_payments:
         payment_amount = frappe.utils.flt(
-            payment.get("amount"),
+            payment.amount,
             2
         )
 
@@ -306,7 +324,7 @@ def start_pos_payment(
 
         allocation_total += payment_amount
 
-        if mode_of_payment == "Credit Card":
+        if payment.mode_of_payment == "Credit Card":
             credit_card_amount += payment_amount
 
     allocation_total = frappe.utils.flt(
@@ -363,6 +381,18 @@ def start_pos_payment(
     device = get_device(
         pos_profile=pos_profile
     )
+
+    if device.company != company:
+        frappe.throw(
+            "The selected NMI terminal does not belong to "
+            "the Sales Invoice company."
+        )
+
+    if device.pos_profile != pos_profile:
+        frappe.throw(
+            "The selected NMI terminal does not belong to "
+            "the Sales Invoice POS Profile."
+        )
 
     client = NMIClient()
 
@@ -479,68 +509,8 @@ def start_pos_payment(
 
         raise
 
-@frappe.whitelist()
-def complete_erp_link(
-    transaction_name,
-    erp_document_type,
-    erp_document_name
-):
-    transaction = frappe.get_doc(
-        "NMI Payment Transaction",
-        transaction_name
-    )
 
-    _require_payment_permission(
-        "link_payment",
-        transaction
-    )
-
-    if transaction.status != "Approved":
-        frappe.throw(
-            "Only approved NMI transactions can be linked to an ERP document."
-        )
-
-    if erp_document_type not in (
-        "POS Invoice",
-        "Sales Invoice"
-    ):
-        frappe.throw(
-            "Unsupported ERP document type for NMI payment."
-        )
-
-    erp_doc = frappe.get_doc(
-        erp_document_type,
-        erp_document_name
-    )
-
-    if not erp_doc.meta.has_field(
-        "custom_nmi_payment_transaction"
-    ):
-        frappe.throw(
-            f"Required NMI field is missing from {erp_document_type}."
-        )
-
-    erp_doc.db_set(
-        "custom_nmi_payment_transaction",
-        transaction.name,
-        update_modified=False
-    )
-
-    transaction.erp_document_type = erp_document_type
-    transaction.erp_document_name = erp_document_name
-    transaction.status = "ERPNext Completed"
-
-    transaction.save(ignore_permissions=True)
-    frappe.db.commit()
-
-    return {
-        "transaction": transaction.name,
-        "status": transaction.status,
-        "erp_document_type": transaction.erp_document_type,
-        "erp_document_name": transaction.erp_document_name
-    }
-
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def void_payment(transaction_name):
     txn = frappe.get_doc(
         "NMI Payment Transaction",
@@ -736,7 +706,7 @@ def void_payment(transaction_name):
         raise
 
 
-@frappe.whitelist() 
+@frappe.whitelist(methods=["POST"])
 def refund_payment(transaction_name, amount):
 
     txn = frappe.get_doc(

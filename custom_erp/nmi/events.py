@@ -4,9 +4,187 @@ from frappe.utils import flt
 from custom_erp.nmi.api import (
     void_payment,
     refund_payment,
+    _validate_transaction_environment,
 )
 
 
+
+def validate_sales_invoice_nmi_payment(doc, method=None):
+    # Returns are handled separately by the existing return logic.
+    if doc.is_return:
+        return
+
+    credit_card_amount = sum(
+        flt(payment.amount or 0)
+        for payment in (doc.get("payments") or [])
+        if payment.mode_of_payment == "Credit Card"
+    )
+
+    credit_card_amount = flt(credit_card_amount, 2)
+
+    # Invoice does not use the NMI-configured payment method.
+    if credit_card_amount <= 0:
+        return
+
+    nmi_payment_transaction = doc.get(
+        "custom_nmi_payment_transaction"
+    )
+
+    if not nmi_payment_transaction:
+        frappe.throw(
+            _(
+                "This invoice contains a Credit Card payment of {0}, "
+                "but no NMI Payment Transaction is linked. "
+                "Complete the NMI payment before submitting the invoice."
+            ).format(credit_card_amount)
+        )
+
+    txn = frappe.get_doc(
+        "NMI Payment Transaction",
+        nmi_payment_transaction
+    )
+
+    # Prevent an NMI approval from being reused by another invoice.
+    if txn.erp_document_name and txn.erp_document_name != doc.name:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} is already linked "
+                "to {1} {2} and cannot be reused for invoice {3}."
+            ).format(
+                txn.name,
+                txn.erp_document_type or "ERP document",
+                txn.erp_document_name,
+                doc.name,
+            )
+        )
+
+    if txn.erp_document_type and txn.erp_document_type != doc.doctype:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} belongs to document type {1} "
+                "and cannot be used for {2}."
+            ).format(
+                txn.name,
+                txn.erp_document_type,
+                doc.doctype,
+            )
+        )
+
+    if txn.status != "Approved":
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} is not approved. "
+                "Current status: {1}."
+            ).format(
+                txn.name,
+                txn.status
+            )
+        )
+    approved_amount = flt(txn.amount, 2)
+
+    if abs(approved_amount - credit_card_amount) > 0.01:
+        frappe.throw(
+            _(
+                "NMI approved amount {0} does not match "
+                "invoice Credit Card amount {1}."
+            ).format(
+                approved_amount,
+                credit_card_amount,
+            )
+        )
+    if txn.company != doc.company:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} belongs to company {1}, "
+                "but this invoice belongs to company {2}."
+            ).format(
+                txn.name,
+                txn.company,
+                doc.company,
+            )
+        )
+
+    if txn.currency != doc.currency:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} uses currency {1}, "
+                "but this invoice uses currency {2}."
+            ).format(
+                txn.name,
+                txn.currency,
+                doc.currency,
+            )
+        )
+    if txn.customer != doc.customer:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} belongs to customer {1}, "
+                "but this invoice belongs to customer {2}."
+            ).format(
+                txn.name,
+                txn.customer,
+                doc.customer,
+            )
+        )
+    if doc.is_pos:
+        if not doc.pos_profile:
+            frappe.throw(
+                _("POS Profile is required for an NMI POS payment.")
+            )
+
+        if txn.pos_profile != doc.pos_profile:
+            frappe.throw(
+                _(
+                    "NMI Payment Transaction {0} belongs to POS Profile {1}, "
+                    "but this invoice uses POS Profile {2}."
+                ).format(
+                    txn.name,
+                    txn.pos_profile,
+                    doc.pos_profile,
+                )
+            )
+    if not txn.device:
+        frappe.throw(
+            _("NMI Payment Transaction {0} has no terminal assigned.").format(
+                txn.name
+            )
+        )
+
+    device = frappe.get_doc("NMI Device", txn.device)
+
+    if not device.enabled:
+        frappe.throw(
+            _("The NMI terminal {0} is disabled.").format(
+                device.device_name
+            )
+        )
+
+    if device.company != doc.company:
+        frappe.throw(
+            _(
+                "NMI terminal {0} belongs to company {1}, "
+                "but this invoice belongs to company {2}."
+            ).format(
+                device.device_name,
+                device.company,
+                doc.company,
+            )
+        )
+
+    if doc.is_pos and device.pos_profile != doc.pos_profile:
+        frappe.throw(
+            _(
+                "NMI terminal {0} belongs to POS Profile {1}, "
+                "but this invoice uses POS Profile {2}."
+            ).format(
+                device.device_name,
+                device.pos_profile,
+                doc.pos_profile,
+            )
+        )
+    # Fail closed if the approved transaction belongs to a
+    # different or unknown NMI environment.
+    _validate_transaction_environment(txn)
 
 def link_nmi_payment(doc, method=None):
     nmi_payment_transaction = doc.get(
