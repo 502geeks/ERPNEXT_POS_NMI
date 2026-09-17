@@ -1,0 +1,10 @@
+{
+ "creation": "2026-09-08 17:42:45.051016",
+ "doc_type": "NMI Payment Transaction",
+ "doctype": "Permission Type",
+ "modified": "2026-09-08 17:42:45.051016",
+ "modified_by": "Administrator",
+ "name": "nmi_payment_transaction_check_payment_status",
+ "owner": "Administrator",
+ "perm_type": "check_payment_status"
+}
