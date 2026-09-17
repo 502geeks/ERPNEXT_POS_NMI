@@ -101,6 +101,7 @@ def start_test_payment(pos_profile="Bridge", amount=1.00):
 
         transaction.payment_request_id = request_id
         transaction.status = "Sent To Terminal"
+        transaction.gateway_status = "Sent To Terminal"
         transaction.sanitized_response = json.dumps(
             _sanitize_nmi_response(result),
             indent=2
@@ -116,6 +117,7 @@ def start_test_payment(pos_profile="Bridge", amount=1.00):
 
     except Exception as exc:
         transaction.status = "Error"
+        transaction.gateway_status = "Error"
         transaction.response_message = str(exc)
         transaction.save(ignore_permissions=True)
         raise
@@ -154,7 +156,17 @@ def check_payment_status(transaction_name):
         transaction.device,
     )
 
-    client = NMIClient()
+    if device.company != transaction.company:
+        frappe.throw(
+            "NMI device company does not match the payment transaction."
+        )
+
+    if device.pos_profile != transaction.pos_profile:
+        frappe.throw(
+            "NMI device POS Profile does not match the payment transaction."
+        )
+
+    client = _validate_transaction_environment(transaction)
 
     result = client.get_payment_status(
         device_id=device.device_id,
@@ -171,9 +183,11 @@ def check_payment_status(transaction_name):
     if status in ("pending", "inFlight"):
 
         transaction.status = "In Flight"
+        transaction.gateway_status = "In Flight"
 
     elif status in ("cancelledAtTerminal", "cancelled", "canceled"):
         transaction.status = "Cancelled"
+        transaction.gateway_status = "Cancelled"
         transaction.completed_time = now_datetime()
 
     elif status == "interactionComplete":
@@ -187,16 +201,64 @@ def check_payment_status(transaction_name):
         transaction.authorization_code = (
             nmi_txn.get("auth_code")
         )
+        transaction.authorized_amount = frappe.utils.flt(
+            nmi_txn.get("authorized_amount"),
+            2
+        )
 
-        if nmi_txn.get("success") is True:
+        gateway_transaction_id = str(
+            nmi_txn.get("id") or ""
+        )
+
+        gateway_type = (
+            nmi_txn.get("type") or ""
+        ).lower()
+
+        gateway_approval = (
+            nmi_txn.get("approval") or ""
+        ).lower()
+
+        requested_amount = frappe.utils.flt(
+            transaction.amount,
+            2
+        )
+
+        authorized_amount = frappe.utils.flt(
+            transaction.authorized_amount,
+            2
+        )
+
+        is_valid_approval = (
+            nmi_txn.get("success") is True
+            and gateway_approval == "approved"
+            and gateway_type == "sale"
+            and bool(gateway_transaction_id)
+            and authorized_amount > 0
+            and abs(authorized_amount - requested_amount) <= 0.01
+        )
+
+        if is_valid_approval:
             transaction.status = "Approved"
-        else:
+            transaction.gateway_status = "Approved"
+            transaction.response_message = None
+
+        elif nmi_txn.get("success") is False:
             transaction.status = "Declined"
+            transaction.gateway_status = "Declined"
+
+        else:
+            transaction.status = "Error"
+            transaction.gateway_status = "Error"
+            transaction.response_message = (
+                "NMI approval validation failed. "
+                "The gateway response did not match the requested payment."
+            )
 
         transaction.completed_time = now_datetime()
 
     elif status:
         transaction.status = "Error"
+        transaction.gateway_status = "Error"
         transaction.response_message = (
             f"Unhandled NMI status: {status}"
         )
@@ -435,6 +497,7 @@ def start_pos_payment(
 
         if not request_id:
             transaction.status = "Unknown"
+            transaction.gateway_status = "Unknown"
 
             transaction.response_message = (
                 "NMI returned a response without a payment request ID. "
@@ -465,6 +528,7 @@ def start_pos_payment(
         transaction.status = (
             "Sent To Terminal"
         )
+        transaction.gateway_status = "Sent To Terminal"
 
         transaction.sanitized_response = (
             json.dumps(
@@ -489,6 +553,7 @@ def start_pos_payment(
         # The request may have reached NMI.
         # Never allow an automatic retry.
         transaction.status = "Unknown"
+        transaction.gateway_status = "Unknown"
         transaction.response_message = str(exc)
 
         transaction.save(
@@ -500,6 +565,7 @@ def start_pos_payment(
 
     except Exception as exc:
         transaction.status = "Error"
+        transaction.gateway_status = "Error"
         transaction.response_message = str(exc)
 
         transaction.save(

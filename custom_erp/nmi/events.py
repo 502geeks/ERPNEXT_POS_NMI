@@ -70,17 +70,46 @@ def validate_sales_invoice_nmi_payment(doc, method=None):
             )
         )
 
-    if txn.status != "Approved":
+    if txn.gateway_status != "Approved":
         frappe.throw(
             _(
-                "NMI Payment Transaction {0} is not approved. "
-                "Current status: {1}."
+                "NMI Payment Transaction {0} does not have "
+                "a verified gateway approval."
+            ).format(txn.name)
+        )
+    void_status = txn.get("void_status") or "Not Requested"
+    refund_status = txn.get("refund_status") or "Not Requested"
+
+    if void_status in ("Processing", "Approved", "Unknown"):
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} cannot be used because "
+                "its void status is {1}."
             ).format(
                 txn.name,
-                txn.status
+                void_status,
             )
         )
-    approved_amount = flt(txn.amount, 2)
+
+    if refund_status in ("Processing", "Approved", "Unknown"):
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} cannot be used because "
+                "its refund status is {1}."
+            ).format(
+                txn.name,
+                refund_status,
+            )
+        )
+    approved_amount = flt(txn.authorized_amount, 2)
+
+    if approved_amount <= 0:
+        frappe.throw(
+            _(
+                "NMI Payment Transaction {0} does not contain "
+                "a valid gateway authorized amount."
+            ).format(txn.name)
+        )
 
     if abs(approved_amount - credit_card_amount) > 0.01:
         frappe.throw(
@@ -194,65 +223,13 @@ def link_nmi_payment(doc, method=None):
     if not nmi_payment_transaction:
         return
 
+    # Revalidate all NMI authorization and invoice bindings
+    # immediately before final ERPNext completion.
+    validate_sales_invoice_nmi_payment(doc, method)
     txn = frappe.get_doc(
         "NMI Payment Transaction",
         nmi_payment_transaction
     )
-
-    # ---------------------------------------------
-    # NMI MUST HAVE APPROVED THE TRANSACTION
-    # ---------------------------------------------
-    if txn.status != "Approved":
-        frappe.throw(
-            _(
-                "NMI payment {0} is not approved."
-            ).format(txn.name)
-        )
-
-    # ---------------------------------------------
-    # VERIFY AMOUNT
-    # ---------------------------------------------
-
-    frappe.logger().info(
-    "NMI submit payments: %s",
-    [
-        {
-            "mode": p.mode_of_payment,
-            "amount": p.amount
-        }
-        for p in (doc.get("payments") or [])
-    ]
-    )
-
-    credit_card_amount = 0
-
-    for payment in doc.get("payments") or []:
-        if payment.mode_of_payment == "Credit Card":
-            credit_card_amount += flt(payment.amount)
-
-    credit_card_amount = flt(
-        credit_card_amount,
-        2
-    )
-
-    if credit_card_amount <= 0:
-        frappe.throw(
-            _("No Credit Card payment amount was found on the invoice.")
-        )
-
-    if abs(
-        flt(txn.amount, 2) -
-        credit_card_amount
-    ) > 0.01:
-        frappe.throw(
-            _(
-                "NMI approved amount {0} does not "
-                "match invoice Credit Card amount {1}."
-            ).format(
-                txn.amount,
-                credit_card_amount
-            )
-        )
 
     # ---------------------------------------------
     # LINK FINAL ERP DOCUMENT

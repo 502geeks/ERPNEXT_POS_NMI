@@ -77,6 +77,12 @@
    "label": "Amount"
   },
   {
+    "fieldname": "authorized_amount",
+    "fieldtype": "Currency",
+    "label": "Authorized Amount",
+    "read_only": 1
+  },
+  {
    "fieldname": "currency",
    "fieldtype": "Link",
    "label": "Currency",
@@ -103,6 +109,14 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Created\nSent To Terminal\nIn Flight\nApproved\nDeclined\nCancelled\nTimed Out\nError\nERPNext Completed"
+  },
+    {
+   "default": "Created",
+   "fieldname": "gateway_status",
+   "fieldtype": "Select",
+   "label": "Gateway Status",
+   "options": "Created\nSent To Terminal\nIn Flight\nApproved\nDeclined\nCancelled\nTimed Out\nError\nUnknown",
+   "read_only": 1
   },
   {
    "fieldname": "response_code",
