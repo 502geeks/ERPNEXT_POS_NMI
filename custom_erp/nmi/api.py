@@ -347,8 +347,21 @@ def start_pos_payment(
             "NMI sale payment cannot be started for a return invoice."
         )
     # -------------------------------------------------
-    # DUPLICATE PAYMENT PROTECTION
+    # DUPLICATE / CONCURRENT PAYMENT PROTECTION
     # -------------------------------------------------
+    # Serialize payment creation for this Sales Invoice.
+    # A concurrent request waits here until the request
+    # currently creating the NMI transaction commits.
+    frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabSales Invoice`
+        WHERE name = %s
+        FOR UPDATE
+        """,
+        (erp_document_name,),
+    )
+
     existing_transaction = _get_existing_pos_payment(
         erp_document_type,
         erp_document_name
@@ -356,9 +369,8 @@ def start_pos_payment(
 
     if existing_transaction:
         return _handle_existing_pos_payment(
-        existing_transaction
+            existing_transaction
         )
-
     # -------------------------------------------------
     # AUTHORITATIVE PAYMENT ALLOCATIONS
     # Use the persisted Sales Invoice, not browser input.
@@ -470,6 +482,7 @@ def start_pos_payment(
         "amount": amount,
         "currency": currency,
         "status": "Created",
+        "gateway_status": "Created",
         "gateway_environment": client.environment,
         "request_time": now_datetime(),
         "erp_document_type": erp_document_type,
@@ -480,8 +493,9 @@ def start_pos_payment(
         ignore_permissions=True
     )
 
+    # Persist the Created transaction and release the
+    # Sales Invoice row lock before contacting NMI.
     frappe.db.commit()
-
     try:
         # -------------------------------------------------
         # SEND PAYMENT TO NMI
@@ -1014,6 +1028,8 @@ def _get_existing_pos_payment(
         "In Flight",
         "Approved",
         "Unknown",
+        "Timed Out",
+        "Error",
         "ERPNext Completed",
     ]
 
@@ -1030,6 +1046,13 @@ def _get_existing_pos_payment(
 
 
 def _handle_existing_pos_payment(transaction):
+    if transaction.status == "Created":
+        return {
+            "transaction": transaction.name,
+            "status": transaction.status,
+            "existing_payment": True,
+            "resume_polling": False,
+        }
     if transaction.status in (
         "Sent To Terminal",
         "In Flight",
