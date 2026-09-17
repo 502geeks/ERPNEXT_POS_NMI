@@ -1047,3 +1047,36 @@ def _sanitize_nmi_response(data):
         else value
         for key, value in data.items()
     }
+
+
+def reconcile_legacy_transaction_environment(transaction_name, environment):
+    if frappe.session.user != "Administrator":
+        frappe.throw(
+            "Only Administrator can reconcile legacy NMI transaction environments.",
+            frappe.PermissionError,
+        )
+
+    environment = (environment or "").strip()
+
+    if environment not in ("Sandbox", "Production"):
+        frappe.throw("Environment must be Sandbox or Production.")
+
+    txn = frappe.get_doc("NMI Payment Transaction", transaction_name)
+
+    if txn.gateway_environment:
+        frappe.throw(
+            f"Gateway Environment is already set to {txn.gateway_environment}."
+        )
+
+    frappe.db.set_value(
+        "NMI Payment Transaction",
+        txn.name,
+        "gateway_environment",
+        environment,
+        update_modified=True,
+    )
+
+    return {
+        "transaction": txn.name,
+        "gateway_environment": environment,
+    }
